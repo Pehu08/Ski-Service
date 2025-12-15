@@ -1,0 +1,42 @@
+﻿<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">Hiihtovoide Logbook</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Etusivu
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="inventory/skis">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Suksiparit
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="inventory/waxes">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Voiteet
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="tests/new">
+                <span class="bi bi-plus-square-nav-menu" aria-hidden="true"></span> Uusi testi
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="search">
+                <span class="bi bi-search-nav-menu" aria-hidden="true"></span> Hae testejä
+            </NavLink>
+        </div>
+    </nav>
+</div>
+

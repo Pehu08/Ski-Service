@@ -1,0 +1,387 @@
+@page "/search"
+@rendermode InteractiveServer
+@using SkiServiceLogbook.Domain.Entities
+@using SkiServiceLogbook.Domain.Enums
+@using SkiServiceLogbook.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject SkiServiceDbContext DbContext
+@inject NavigationManager Navigation
+
+<PageTitle>Hae testejä</PageTitle>
+
+<h3>Hae testejä</h3>
+
+<div class="row">
+    <div class="col-lg-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">🔍 Hakukriteerit</h5>
+            </div>
+            <div class="card-body">
+                <EditForm Model="searchModel" OnValidSubmit="PerformSearch">
+                    <div class="mb-3">
+                        <label class="form-label">Päivämäärä:</label>
+                        <InputDate @bind-Value="searchModel.Date" class="form-control" />
+                        <small class="form-text text-muted">Jätä tyhjäksi hakiaksesi kaikki</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Ilman lämpötila (°C):</label>
+                        <div class="input-group">
+                            <InputNumber @bind-Value="searchModel.AirTempC" class="form-control" placeholder="Esim. -5" />
+                            <span class="input-group-text">±</span>
+                            <InputNumber @bind-Value="searchModel.AirTempTol" class="form-control" style="max-width: 80px;" />
+                            <span class="input-group-text">°C</span>
+                        </div>
+                        <small class="form-text text-muted">Toleranssi (oletus: 2°C)</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Lumen kosteus (%):</label>
+                        <div class="input-group">
+                            <InputNumber @bind-Value="searchModel.SnowMoisturePct" class="form-control" placeholder="Esim. 60" />
+                            <span class="input-group-text">±</span>
+                            <InputNumber @bind-Value="searchModel.MoistureTol" class="form-control" style="max-width: 80px;" />
+                            <span class="input-group-text">%</span>
+                        </div>
+                        <small class="form-text text-muted">Toleranssi (oletus: 5%)</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Lumen koostumus:</label>
+                        <InputSelect @bind-Value="searchModel.SnowComposition" class="form-select">
+                            <option value="">-- Kaikki --</option>
+                            @foreach (SnowComposition comp in Enum.GetValues(typeof(SnowComposition)))
+                            {
+                                <option value="@comp">@GetSnowCompositionName(comp)</option>
+                            }
+                        </InputSelect>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Paikka:</label>
+                        <InputText @bind-Value="searchModel.Location" class="form-control" placeholder="Esim. Vuokatti" />
+                        <small class="form-text text-muted">Osittainen haku</small>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary" disabled="@isSearching">
+                            @(isSearching ? "Haetaan..." : "Hae testejä")
+                        </button>
+                        <button type="button" class="btn btn-secondary" @onclick="ClearSearch">
+                            Tyhjennä haku
+                        </button>
+                    </div>
+                </EditForm>
+
+                @if (hasSearched)
+                {
+                    <div class="alert alert-info mt-3 mb-0">
+                        <small>Löytyi @totalResults tulosta</small>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        @if (errorMessage != null)
+        {
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                @errorMessage
+                <button type="button" class="btn-close" @onclick="@(() => errorMessage = null)"></button>
+            </div>
+        }
+
+        @if (!hasSearched)
+        {
+            <div class="card">
+                <div class="card-body text-center text-muted">
+                    <i class="bi bi-search" style="font-size: 3rem;"></i>
+                    <p class="mt-3">Syötä hakukriteerit vasemmalle ja aloita haku.</p>
+                </div>
+            </div>
+        }
+        else if (isSearching)
+        {
+            <div class="text-center">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Ladataan...</span>
+                </div>
+            </div>
+        }
+        else if (!searchResults.Any())
+        {
+            <div class="alert alert-warning">
+                Ei hakutuloksia. Kokeile muuttaa hakukriteerejä.
+            </div>
+        }
+        else
+        {
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Hakutulokset (@totalResults)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="list-group">
+                        @foreach (var result in searchResults)
+                        {
+                            <div class="list-group-item list-group-item-action">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1">@result.Name</h6>
+                                        <div class="mb-2">
+                                            <small class="text-muted">
+                                                📅 @result.EventDate.ToString("dd.MM.yyyy HH:mm")
+                                                @if (!string.IsNullOrEmpty(result.Location))
+                                                {
+                                                    <span class="ms-2">📍 @result.Location</span>
+                                                }
+                                            </small>
+                                        </div>
+                                        <div class="d-flex gap-3 flex-wrap">
+                                            @if (result.AirTemperature.HasValue)
+                                            {
+                                                <span class="badge bg-primary">
+                                                    🌡️ @result.AirTemperature.Value.ToString("F1")°C
+                                                </span>
+                                            }
+                                            @if (result.Humidity.HasValue)
+                                            {
+                                                <span class="badge bg-info">
+                                                    💧 @result.Humidity.Value.ToString("F0")%
+                                                </span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(result.SnowCondition))
+                                            {
+                                                <span class="badge bg-secondary">
+                                                    ❄️ @result.SnowCondition
+                                                </span>
+                                            }
+                                            <span class="badge bg-success">
+                                                🎿 @result.PairCount pareja
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="ms-3">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenSummary(result.Id)">
+                                            Avaa yhteenveto →
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @if (totalPages > 1)
+            {
+                <nav aria-label="Sivutus">
+                    <ul class="pagination justify-content-center">
+                        <li class="page-item @(currentPage == 1 ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => ChangePage(currentPage - 1)" disabled="@(currentPage == 1)">
+                                Edellinen
+                            </button>
+                        </li>
+
+                        @for (int i = 1; i <= totalPages; i++)
+                        {
+                            var pageNumber = i;
+                            <li class="page-item @(currentPage == pageNumber ? "active" : "")">
+                                <button class="page-link" @onclick="() => ChangePage(pageNumber)">
+                                    @pageNumber
+                                </button>
+                            </li>
+                        }
+
+                        <li class="page-item @(currentPage == totalPages ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => ChangePage(currentPage + 1)" disabled="@(currentPage == totalPages)">
+                                Seuraava
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private SearchFormModel searchModel = new();
+    private List<TestEventResultDto> searchResults = new();
+    private bool isSearching = false;
+    private bool hasSearched = false;
+    private string? errorMessage;
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 20;
+    private int totalResults = 0;
+    private int totalPages = 0;
+
+    private async Task PerformSearch()
+    {
+        isSearching = true;
+        errorMessage = null;
+        currentPage = 1;
+
+        try
+        {
+            await ExecuteSearch();
+            hasSearched = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Virhe haussa: {ex.Message}";
+        }
+        finally
+        {
+            isSearching = false;
+        }
+    }
+
+    private async Task ExecuteSearch()
+    {
+        var query = DbContext.TestEvents
+            .Include(te => te.TestEventPairs)
+            .AsQueryable();
+
+        // Filter by date
+        if (searchModel.Date.HasValue)
+        {
+            var searchDate = searchModel.Date.Value.Date;
+            query = query.Where(te => te.EventDate.Date == searchDate);
+        }
+
+        // Filter by air temperature with tolerance
+        if (searchModel.AirTempC.HasValue)
+        {
+            var minTemp = searchModel.AirTempC.Value - searchModel.AirTempTol;
+            var maxTemp = searchModel.AirTempC.Value + searchModel.AirTempTol;
+            query = query.Where(te => te.AirTemperature.HasValue && 
+                                     te.AirTemperature >= minTemp && 
+                                     te.AirTemperature <= maxTemp);
+        }
+
+        // Filter by snow moisture with tolerance
+        if (searchModel.SnowMoisturePct.HasValue)
+        {
+            var minMoisture = searchModel.SnowMoisturePct.Value - searchModel.MoistureTol;
+            var maxMoisture = searchModel.SnowMoisturePct.Value + searchModel.MoistureTol;
+            query = query.Where(te => te.Humidity.HasValue && 
+                                     te.Humidity >= minMoisture && 
+                                     te.Humidity <= maxMoisture);
+        }
+
+        // Filter by snow composition
+        if (!string.IsNullOrEmpty(searchModel.SnowComposition))
+        {
+            var compositionName = GetSnowCompositionName(Enum.Parse<SnowComposition>(searchModel.SnowComposition));
+            query = query.Where(te => te.SnowCondition != null && 
+                                     te.SnowCondition.Contains(compositionName));
+        }
+
+        // Filter by location (partial match)
+        if (!string.IsNullOrEmpty(searchModel.Location))
+        {
+            query = query.Where(te => te.Location.Contains(searchModel.Location));
+        }
+
+        // Get total count
+        totalResults = await query.CountAsync();
+        totalPages = (int)Math.Ceiling((double)totalResults / pageSize);
+
+        // Apply pagination
+        searchResults = await query
+            .OrderByDescending(te => te.EventDate)
+            .Skip((currentPage - 1) * pageSize)
+            .Take(pageSize)
+            .Select(te => new TestEventResultDto
+            {
+                Id = te.Id,
+                Name = te.Name,
+                EventDate = te.EventDate,
+                Location = te.Location,
+                AirTemperature = te.AirTemperature,
+                Humidity = te.Humidity,
+                SnowCondition = te.SnowCondition,
+                PairCount = te.TestEventPairs.Count
+            })
+            .ToListAsync();
+    }
+
+    private async Task ChangePage(int page)
+    {
+        if (page < 1 || page > totalPages) return;
+        
+        currentPage = page;
+        isSearching = true;
+        
+        try
+        {
+            await ExecuteSearch();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Virhe sivun vaihdossa: {ex.Message}";
+        }
+        finally
+        {
+            isSearching = false;
+        }
+    }
+
+    private void ClearSearch()
+    {
+        searchModel = new SearchFormModel();
+        searchResults.Clear();
+        hasSearched = false;
+        currentPage = 1;
+        totalResults = 0;
+        totalPages = 0;
+        errorMessage = null;
+    }
+
+    private void OpenSummary(int testId)
+    {
+        Navigation.NavigateTo($"/tests/{testId}/summary");
+    }
+
+    private string GetSnowCompositionName(SnowComposition composition)
+    {
+        return composition switch
+        {
+            SnowComposition.Uusi => "Uusi lumi",
+            SnowComposition.Vanha => "Vanha lumi",
+            SnowComposition.Hieno => "Hieno lumi",
+            SnowComposition.Karkea => "Karkea lumi",
+            SnowComposition.Muu => "Muu",
+            _ => composition.ToString()
+        };
+    }
+
+    // Models
+    private class SearchFormModel
+    {
+        public DateTime? Date { get; set; }
+        public decimal? AirTempC { get; set; }
+        public decimal AirTempTol { get; set; } = 2;
+        public decimal? SnowMoisturePct { get; set; }
+        public decimal MoistureTol { get; set; } = 5;
+        public string? SnowComposition { get; set; }
+        public string? Location { get; set; }
+    }
+
+    private class TestEventResultDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public DateTime EventDate { get; set; }
+        public string Location { get; set; } = "";
+        public decimal? AirTemperature { get; set; }
+        public decimal? Humidity { get; set; }
+        public string? SnowCondition { get; set; }
+        public int PairCount { get; set; }
+    }
+}
