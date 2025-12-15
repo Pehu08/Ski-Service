@@ -1,0 +1,526 @@
+@page "/tests/{id:int}/summary"
+@rendermode InteractiveServer
+@* @attribute [AllowAnonymous] *@
+@using SkiServiceLogbook.Domain.Entities
+@using SkiServiceLogbook.Domain.Enums
+@using SkiServiceLogbook.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject SkiServiceDbContext DbContext
+@inject NavigationManager Navigation
+
+<PageTitle>Testitapahtuman yhteenveto</PageTitle>
+
+@if (isLoading)
+{
+    <p><em>Ladataan...</em></p>
+}
+else if (testEvent == null)
+{
+    <div class="alert alert-warning">
+        Testiä ei löytynyt.
+    </div>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3>Testitapahtuman yhteenveto</h3>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary" @onclick="NavigateToSearch">
+                Siirry hakuun →
+            </button>
+        </div>
+    </div>
+
+    @if (errorMessage != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            @errorMessage
+            <button type="button" class="btn-close" @onclick="@(() => errorMessage = null)"></button>
+        </div>
+    }
+
+    <div class="row">
+        <!-- Best Pair Card -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100 border-success">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">🏆 Paras suksipari</h5>
+                </div>
+                <div class="card-body">
+                    @if (bestPair != null)
+                    {
+                        <h4 class="text-success">Pari #@bestPair.PairNumber</h4>
+                        <p class="mb-1"><strong>Merkki:</strong> @bestPair.Brand</p>
+                        <p class="mb-1"><strong>Malli:</strong> @bestPair.Model</p>
+                        <p class="mb-1"><strong>Pituus:</strong> @bestPair.Length cm</p>
+                        @if (bestPairWaxing != null && bestPairWaxing.Any())
+                        {
+                            <hr />
+                            <h6>Voittava voitelu:</h6>
+                            @foreach (var wax in bestPairWaxing)
+                            {
+                                <div class="mb-1">
+                                    <span class="badge bg-info">@wax.WaxCategory.Name</span>
+                                    <strong>@wax.Name</strong> (@wax.Manufacturer)
+                                </div>
+                            }
+                        }
+                    }
+                    else
+                    {
+                        <p class="text-muted">Testiä ei ole vielä suoritettu loppuun.</p>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Conditions Card -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">🌤️ Olosuhteet</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-1"><strong>Päivämäärä:</strong> @testEvent.EventDate.ToString("dd.MM.yyyy")</p>
+                    <p class="mb-1"><strong>Kellonaika:</strong> @testEvent.EventDate.ToString("HH:mm")</p>
+                    <p class="mb-1"><strong>Paikka:</strong> @(string.IsNullOrEmpty(testEvent.Location) ? "-" : testEvent.Location)</p>
+                    <hr />
+                    <p class="mb-1"><strong>Ilman lämpötila:</strong> @(testEvent.AirTemperature?.ToString("F1") ?? "-") °C</p>
+                    <p class="mb-1"><strong>Ilmankosteus:</strong> @(testEvent.Humidity?.ToString("F0") ?? "-") %</p>
+                    <p class="mb-1"><strong>Lumen kunto:</strong> @(testEvent.SnowCondition ?? "-")</p>
+                    @if (!string.IsNullOrEmpty(testEvent.Notes))
+                    {
+                        <hr />
+                        <p class="mb-1"><strong>Muistiinpanot:</strong></p>
+                        <p class="mb-0 text-muted">@testEvent.Notes</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Table -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">📊 Tulostaulukko</h5>
+        </div>
+        <div class="card-body">
+            @if (pairResults.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Sijoitus</th>
+                                <th>Parinumero</th>
+                                <th>Merkki</th>
+                                <th>Malli</th>
+                                <th>Pituus</th>
+                                <th>Ero (cm)</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var result in pairResults.OrderBy(r => r.Ranking))
+                            {
+                                <tr class="@(result.IsWinner ? "table-success" : "")">
+                                    <td>
+                                        @if (result.IsWinner)
+                                        {
+                                            <span class="badge bg-warning text-dark">🥇</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@result.Ranking</span>
+                                        }
+                                    </td>
+                                    <td><strong>#@result.PairNumber</strong></td>
+                                    <td>@result.Brand</td>
+                                    <td>@result.Model</td>
+                                    <td>@result.Length cm</td>
+                                    <td>
+                                        @if (result.TotalDistanceLost == 0)
+                                        {
+                                            <strong class="text-success">0.0 cm</strong>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-danger">-@result.TotalDistanceLost.ToString("F1") cm</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (result.IsWinner)
+                                        {
+                                            <span class="badge bg-success">Voittaja</span>
+                                        }
+                                        else if (result.IsEliminated)
+                                        {
+                                            <span class="badge bg-secondary">Karsiutunut</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-info">Osallistui</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted">Ei tuloksia.</p>
+            }
+        </div>
+    </div>
+
+    <!-- Waxing Instructions -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">🧴 Voiteluohjeet</h5>
+        </div>
+        <div class="card-body">
+            @if (waxingInstructions.Any())
+            {
+                <div class="accordion" id="waxingAccordion">
+                    @for (int i = 0; i < waxingInstructions.Count; i++)
+                    {
+                        var instruction = waxingInstructions[i];
+                        var accordionId = $"waxing{i}";
+                        
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="heading@(accordionId)">
+                                <button class="accordion-button @(i > 0 ? "collapsed" : "")" 
+                                        type="button" 
+                                        data-bs-toggle="collapse" 
+                                        data-bs-target="#collapse@(accordionId)" 
+                                        aria-expanded="@(i == 0 ? "true" : "false")" 
+                                        aria-controls="collapse@(accordionId)">
+                                    <strong>Pari #@instruction.PairNumber</strong>
+                                    <span class="ms-2 text-muted">@instruction.Brand @instruction.Model</span>
+                                </button>
+                            </h2>
+                            <div id="collapse@(accordionId)" 
+                                 class="accordion-collapse collapse @(i == 0 ? "show" : "")" 
+                                 aria-labelledby="heading@(accordionId)" 
+                                 data-bs-parent="#waxingAccordion">
+                                <div class="accordion-body">
+                                    @if (instruction.Waxes.Any())
+                                    {
+                                        <h6>Käytetyt voiteet:</h6>
+                                        <div class="mb-3">
+                                            @foreach (var wax in instruction.Waxes)
+                                            {
+                                                <div class="mb-2">
+                                                    <span class="badge bg-info me-2">@wax.CategoryName</span>
+                                                    <strong>@wax.Name</strong> - @wax.Manufacturer
+                                                    @if (wax.MinTemperature.HasValue || wax.MaxTemperature.HasValue)
+                                                    {
+                                                        <small class="text-muted">
+                                                            [@FormatTempRange(wax.MinTemperature, wax.MaxTemperature)]
+                                                        </small>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    
+                                    @if (!string.IsNullOrEmpty(instruction.Instructions))
+                                    {
+                                        <h6>Vaiheistus ja ohjeet:</h6>
+                                        <div class="alert alert-light mb-0">
+                                            <pre class="mb-0" style="white-space: pre-wrap;">@instruction.Instructions</pre>
+                                        </div>
+                                    }
+                                    else if (!instruction.Waxes.Any())
+                                    {
+                                        <p class="text-muted mb-0">Ei voiteluohjeita tälle parille.</p>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="text-muted">Ei voiteluohjeita.</p>
+            }
+        </div>
+    </div>
+
+    <!-- Export Buttons -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">📥 Vie tiedot</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-3">Lataa testitulokset PDF- tai CSV-muodossa.</p>
+            <div class="d-flex gap-2">
+                <button class="btn btn-danger" @onclick="ExportPdf" disabled="@isExporting">
+                    <i class="bi bi-file-pdf"></i> Lataa PDF
+                </button>
+                <button class="btn btn-success" @onclick="ExportCsv" disabled="@isExporting">
+                    <i class="bi bi-file-spreadsheet"></i> Lataa CSV
+                </button>
+            </div>
+            @if (exportMessage != null)
+            {
+                <div class="alert alert-info mt-3 mb-0">
+                    @exportMessage
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private TestEvent? testEvent;
+    private SkiPair? bestPair;
+    private List<Wax> bestPairWaxing = new();
+    private List<PairResultDto> pairResults = new();
+    private List<WaxingInstructionDto> waxingInstructions = new();
+    
+    private bool isLoading = true;
+    private bool isExporting = false;
+    private string? errorMessage;
+    private string? exportMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTestSummary();
+        isLoading = false;
+    }
+
+    private async Task LoadTestSummary()
+    {
+        try
+        {
+            // Load test event
+            testEvent = await DbContext.TestEvents
+                .FirstOrDefaultAsync(te => te.Id == Id);
+
+            if (testEvent == null)
+            {
+                errorMessage = "Testiä ei löytynyt.";
+                return;
+            }
+
+            // Find the best pair (winner of final match)
+            var finalMatch = await DbContext.Matches
+                .Where(m => m.TestEventId == Id && m.Status == MatchStatus.Completed)
+                .OrderByDescending(m => m.Round)
+                .Include(m => m.WinnerSkiPair)
+                .FirstOrDefaultAsync();
+
+            if (finalMatch?.WinnerSkiPair != null)
+            {
+                bestPair = finalMatch.WinnerSkiPair;
+
+                // Load waxes used by best pair
+                var bestPairTestEventPair = await DbContext.TestEventPairs
+                    .Include(tep => tep.TestEventPairWaxes)
+                        .ThenInclude(tepw => tepw.Wax)
+                            .ThenInclude(w => w.WaxCategory)
+                    .FirstOrDefaultAsync(tep => tep.TestEventId == Id && tep.SkiPairId == bestPair.Id);
+
+                if (bestPairTestEventPair != null)
+                {
+                    bestPairWaxing = bestPairTestEventPair.TestEventPairWaxes
+                        .OrderBy(tepw => tepw.LayerOrder)
+                        .Select(tepw => tepw.Wax)
+                        .ToList();
+                }
+            }
+
+            // Load all test event pairs with results
+            var testEventPairs = await DbContext.TestEventPairs
+                .Include(tep => tep.SkiPair)
+                .Include(tep => tep.TestEventPairWaxes)
+                    .ThenInclude(tepw => tepw.Wax)
+                        .ThenInclude(w => w.WaxCategory)
+                .Where(tep => tep.TestEventId == Id)
+                .ToListAsync();
+
+            // Load all matches for this test
+            var matches = await DbContext.Matches
+                .Where(m => m.TestEventId == Id)
+                .ToListAsync();
+
+            // Calculate results for each pair
+            int ranking = 1;
+            foreach (var tep in testEventPairs)
+            {
+                var distanceLost = CalculateDistanceLost(tep.SkiPairId, matches, tep.Notes);
+                var isWinner = bestPair != null && tep.SkiPairId == bestPair.Id;
+                var isEliminated = matches.Any(m => 
+                    (m.SkiPair1Id == tep.SkiPairId || m.SkiPair2Id == tep.SkiPairId) && 
+                    m.WinnerSkiPairId.HasValue && 
+                    m.WinnerSkiPairId != tep.SkiPairId);
+
+                pairResults.Add(new PairResultDto
+                {
+                    PairId = tep.SkiPairId,
+                    PairNumber = tep.SkiPair.PairNumber,
+                    Brand = tep.SkiPair.Brand,
+                    Model = tep.SkiPair.Model,
+                    Length = tep.SkiPair.Length,
+                    TotalDistanceLost = distanceLost,
+                    IsWinner = isWinner,
+                    IsEliminated = isEliminated,
+                    Ranking = isWinner ? 1 : ++ranking
+                });
+            }
+
+            // Load waxing instructions
+            foreach (var tep in testEventPairs.OrderBy(tep => tep.SkiPair.PairNumber))
+            {
+                var waxes = tep.TestEventPairWaxes
+                    .OrderBy(tepw => tepw.LayerOrder)
+                    .Select(tepw => new WaxDto
+                    {
+                        Name = tepw.Wax.Name,
+                        Manufacturer = tepw.Wax.Manufacturer,
+                        CategoryName = tepw.Wax.WaxCategory.Name,
+                        MinTemperature = tepw.Wax.MinTemperature,
+                        MaxTemperature = tepw.Wax.MaxTemperature
+                    })
+                    .ToList();
+
+                waxingInstructions.Add(new WaxingInstructionDto
+                {
+                    PairNumber = tep.SkiPair.PairNumber,
+                    Brand = tep.SkiPair.Brand,
+                    Model = tep.SkiPair.Model,
+                    Waxes = waxes,
+                    Instructions = tep.Notes ?? ""
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Virhe tietojen latauksessa: {ex.Message}";
+        }
+    }
+
+    private decimal CalculateDistanceLost(int pairId, List<Match> matches, string? notes)
+    {
+        // Parse distance from notes (format: "Ottelu #X: Häviäjä (-Y cm)")
+        decimal totalDistance = 0;
+        
+        if (!string.IsNullOrEmpty(notes))
+        {
+            var lines = notes.Split('\n');
+            foreach (var line in lines)
+            {
+                if (line.Contains("Häviäjä") && line.Contains("cm"))
+                {
+                    // Extract distance from format: "Häviäjä (-X cm)" or "Häviäjä (-X.X cm)"
+                    var match = System.Text.RegularExpressions.Regex.Match(line, @"-(\d+\.?\d*)\s*cm");
+                    if (match.Success && decimal.TryParse(match.Groups[1].Value, out var distance))
+                    {
+                        totalDistance += distance;
+                    }
+                }
+            }
+        }
+
+        return totalDistance;
+    }
+
+    private void NavigateToSearch()
+    {
+        Navigation.NavigateTo("/search");
+    }
+
+    private async Task ExportPdf()
+    {
+        isExporting = true;
+        exportMessage = null;
+
+        try
+        {
+            // TODO: Implement actual PDF export via API
+            // For now, show a message
+            await Task.Delay(500);
+            exportMessage = "PDF-vienti ei ole vielä käytössä. Toteuta API-endpoint: GET /api/reports/{id}.pdf";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Virhe PDF-viennissä: {ex.Message}";
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private async Task ExportCsv()
+    {
+        isExporting = true;
+        exportMessage = null;
+
+        try
+        {
+            // TODO: Implement actual CSV export via API
+            // For now, show a message
+            await Task.Delay(500);
+            exportMessage = "CSV-vienti ei ole vielä käytössä. Toteuta API-endpoint: GET /api/reports/{id}.csv";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Virhe CSV-viennissä: {ex.Message}";
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private string FormatTempRange(decimal? min, decimal? max)
+    {
+        if (min.HasValue && max.HasValue)
+            return $"{min:F1}°C - {max:F1}°C";
+        if (min.HasValue)
+            return $"{min:F1}°C+";
+        if (max.HasValue)
+            return $"< {max:F1}°C";
+        return "";
+    }
+
+    // DTOs
+    private class PairResultDto
+    {
+        public int PairId { get; set; }
+        public int PairNumber { get; set; }
+        public string Brand { get; set; } = "";
+        public string Model { get; set; } = "";
+        public int Length { get; set; }
+        public decimal TotalDistanceLost { get; set; }
+        public bool IsWinner { get; set; }
+        public bool IsEliminated { get; set; }
+        public int Ranking { get; set; }
+    }
+
+    private class WaxingInstructionDto
+    {
+        public int PairNumber { get; set; }
+        public string Brand { get; set; } = "";
+        public string Model { get; set; } = "";
+        public List<WaxDto> Waxes { get; set; } = new();
+        public string Instructions { get; set; } = "";
+    }
+
+    private class WaxDto
+    {
+        public string Name { get; set; } = "";
+        public string Manufacturer { get; set; } = "";
+        public string CategoryName { get; set; } = "";
+        public decimal? MinTemperature { get; set; }
+        public decimal? MaxTemperature { get; set; }
+    }
+}

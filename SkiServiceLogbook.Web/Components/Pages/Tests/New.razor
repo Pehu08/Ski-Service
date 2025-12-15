@@ -1,0 +1,654 @@
+@page "/tests/new"
+@rendermode InteractiveServer
+@* @attribute [Authorize(Policy = "CanCreateTests")] *@
+@using SkiServiceLogbook.Domain.Entities
+@using SkiServiceLogbook.Domain.Enums
+@using SkiServiceLogbook.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using System.ComponentModel.DataAnnotations
+@inject SkiServiceDbContext DbContext
+@inject NavigationManager Navigation
+
+<PageTitle>Uusi testi</PageTitle>
+
+<h3>Luo uusi testi</h3>
+
+@if (errorMessage != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @errorMessage
+        <button type="button" class="btn-close" @onclick="@(() => errorMessage = null)"></button>
+    </div>
+}
+
+<div class="card mb-4">
+    <div class="card-header">
+        <ul class="nav nav-pills card-header-pills">
+            <li class="nav-item">
+                <a class="nav-link @(currentStep == 1 ? "active" : "")" href="#">1. Olosuhteet</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(currentStep == 2 ? "active" : (testEventId == 0 ? "disabled" : ""))" href="#">2. Suksiparit</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(currentStep == 3 ? "active" : (selectedPairIds.Count == 0 ? "disabled" : ""))" href="#">3. Voiteluohjeet</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(currentStep == 4 ? "active" : "disabled")" href="#">4. Kaavio</a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        @if (currentStep == 1)
+        {
+            <h5>Olosuhteet</h5>
+            <EditForm Model="conditionsModel" OnValidSubmit="SaveConditions">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="text-danger" />
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Testipäivä: *</label>
+                        <InputDate @bind-Value="conditionsModel.Date" class="form-control" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Kellonaika: *</label>
+                        <InputDate Type="InputDateType.Time" @bind-Value="conditionsModel.Time" class="form-control" />
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Ilman lämpötila (°C): *</label>
+                        <InputNumber @bind-Value="conditionsModel.AirTempC" class="form-control" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Lumen kosteus (%): *</label>
+                        <InputNumber @bind-Value="conditionsModel.SnowMoisturePct" class="form-control" />
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Lumen koostumus: *</label>
+                    <InputSelect @bind-Value="conditionsModel.SnowComposition" class="form-select">
+                        <option value="">-- Valitse --</option>
+                        @foreach (SnowComposition comp in Enum.GetValues(typeof(SnowComposition)))
+                        {
+                            <option value="@comp">@GetSnowCompositionName(comp)</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Testipaikka:</label>
+                    <InputText @bind-Value="conditionsModel.Location" class="form-control" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Lisämuistiinpanot:</label>
+                    <InputTextArea @bind-Value="conditionsModel.Notes" class="form-control" rows="3" />
+                </div>
+
+                <div class="d-flex justify-content-end">
+                    <button type="submit" class="btn btn-primary">Seuraava →</button>
+                </div>
+            </EditForm>
+        }
+        else if (currentStep == 2)
+        {
+            <h5>Valitse suksiparit (1-10 paria)</h5>
+            
+            @if (isLoadingPairs)
+            {
+                <p><em>Ladataan...</em></p>
+            }
+            else
+            {
+                <EditForm Model="pairSelectionModel" OnValidSubmit="SavePairSelection">
+                    <DataAnnotationsValidator />
+                    
+                    @if (pairSelectionModel.ValidationError != null)
+                    {
+                        <div class="alert alert-warning">@pairSelectionModel.ValidationError</div>
+                    }
+
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th style="width: 50px;">
+                                        <input type="checkbox" class="form-check-input" 
+                                               @onchange="@((e) => ToggleAllPairs((bool)e.Value!))" 
+                                               checked="@allPairsSelected" />
+                                    </th>
+                                    <th>Parinumero</th>
+                                    <th>Merkki</th>
+                                    <th>Malli</th>
+                                    <th>Pituus</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var pair in availablePairs)
+                                {
+                                    <tr>
+                                        <td>
+                                            <input type="checkbox" class="form-check-input" 
+                                                   checked="@selectedPairIds.Contains(pair.Id)"
+                                                   @onchange="@((e) => TogglePair(pair.Id, (bool)e.Value!))" />
+                                        </td>
+                                        <td>@pair.PairNumber</td>
+                                        <td>@pair.Brand</td>
+                                        <td>@pair.Model</td>
+                                        <td>@pair.Length cm</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="alert alert-info">
+                        Valittu: @selectedPairIds.Count / 10 paria
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <button type="button" class="btn btn-secondary" @onclick="GoToPreviousStep">← Edellinen</button>
+                        <button type="submit" class="btn btn-primary" disabled="@(selectedPairIds.Count == 0 || selectedPairIds.Count > 10)">Seuraava →</button>
+                    </div>
+                </EditForm>
+            }
+        }
+        else if (currentStep == 3)
+        {
+            <h5>Voiteluohjeet suksiparille</h5>
+            
+            @if (isLoadingWaxes)
+            {
+                <p><em>Ladataan...</em></p>
+            }
+            else
+            {
+                <EditForm Model="waxingModel" OnValidSubmit="SaveWaxing">
+                    @foreach (var pairId in selectedPairIds)
+                    {
+                        var pair = availablePairs.FirstOrDefault(p => p.Id == pairId);
+                        if (pair != null)
+                        {
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <strong>Pari #@pair.PairNumber</strong> - @pair.Brand @pair.Model
+                                </div>
+                                <div class="card-body">
+                                    @foreach (var category in waxCategories)
+                                    {
+                                        <div class="mb-3">
+                                            <h6>@category.Name</h6>
+                                            <div class="row">
+                                                @foreach (var wax in availableWaxes.Where(w => w.WaxCategoryId == category.Id))
+                                                {
+                                                    <div class="col-md-6">
+                                                        <div class="form-check">
+                                                            <input type="checkbox" class="form-check-input" 
+                                                                   id="wax_@(pairId)_@(wax.Id)"
+                                                                   checked="@IsWaxSelectedForPair(pairId, wax.Id)"
+                                                                   @onchange="@((e) => ToggleWaxForPair(pairId, wax.Id, (bool)e.Value!))" />
+                                                            <label class="form-check-label" for="wax_@(pairId)_@(wax.Id)">
+                                                                @wax.Name (@wax.Manufacturer)
+                                                                @if (wax.MinTemperature.HasValue || wax.MaxTemperature.HasValue)
+                                                                {
+                                                                    <small class="text-muted">
+                                                                        [@FormatTempRange(wax.MinTemperature, wax.MaxTemperature)]
+                                                                    </small>
+                                                                }
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Vaiheistus ja ohjeet:</label>
+                                        <textarea class="form-control" rows="3" 
+                                                  value="@GetInstructionsForPair(pairId)"
+                                                  @onchange="@((e) => SetInstructionsForPair(pairId, e.Value?.ToString()))"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+
+                    <div class="d-flex justify-content-between">
+                        <button type="button" class="btn btn-secondary" @onclick="GoToPreviousStep">← Edellinen</button>
+                        <button type="submit" class="btn btn-primary">Seuraava →</button>
+                    </div>
+                </EditForm>
+            }
+        }
+        else if (currentStep == 4)
+        {
+            <h5>Generoi testikaavio</h5>
+            
+            <div class="alert alert-info">
+                <h6>Yhteenveto:</h6>
+                <ul>
+                    <li><strong>Testi:</strong> @conditionsModel.Date.ToString("d.M.yyyy") klo @conditionsModel.Time.ToString("HH:mm")</li>
+                    <li><strong>Olosuhteet:</strong> @conditionsModel.AirTempC °C, @conditionsModel.SnowMoisturePct % kosteus</li>
+                    <li><strong>Lumen koostumus:</strong> @GetSnowCompositionName(conditionsModel.SnowComposition)</li>
+                    <li><strong>Paikka:</strong> @(string.IsNullOrEmpty(conditionsModel.Location) ? "Ei määritelty" : conditionsModel.Location)</li>
+                    <li><strong>Suksipareja:</strong> @selectedPairIds.Count kpl</li>
+                    <li><strong>Voiteluohjeet:</strong> Määritelty @pairWaxInstructions.Count parille</li>
+                </ul>
+            </div>
+
+            <p>Järjestelmä luo automaattisesti single-elimination -kaaviön valituille suksipareille.</p>
+            
+            @if (isGeneratingBracket)
+            {
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Generoidaan...</span>
+                    </div>
+                    <p>Generoidaan testikaavio...</p>
+                </div>
+            }
+            else
+            {
+                <div class="d-flex justify-content-between">
+                    <button type="button" class="btn btn-secondary" @onclick="GoToPreviousStep">← Edellinen</button>
+                    <button type="button" class="btn btn-success" @onclick="GenerateBracket">Generoi testikaavio</button>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private int currentStep = 1;
+    private int testEventId = 0;
+    private string? errorMessage;
+    
+    // Step 1: Conditions
+    private ConditionsFormModel conditionsModel = new();
+    
+    // Step 2: Pair Selection
+    private List<SkiPair> availablePairs = new();
+    private HashSet<int> selectedPairIds = new();
+    private bool allPairsSelected = false;
+    private bool isLoadingPairs = false;
+    private PairSelectionModel pairSelectionModel = new();
+    
+    // Step 3: Waxing
+    private List<Wax> availableWaxes = new();
+    private List<WaxCategory> waxCategories = new();
+    private Dictionary<int, List<int>> pairWaxSelections = new(); // PairId -> List<WaxId>
+    private Dictionary<int, string> pairWaxInstructions = new(); // PairId -> Instructions
+    private bool isLoadingWaxes = false;
+    private WaxingFormModel waxingModel = new();
+    
+    // Step 4: Bracket Generation
+    private bool isGeneratingBracket = false;
+
+    private async Task SaveConditions()
+    {
+        try
+        {
+            // Combine date and time
+            var eventDateTime = conditionsModel.Date.Date + conditionsModel.Time.TimeOfDay;
+            
+            // Create TestEvent
+            var testEvent = new TestEvent
+            {
+                Name = $"Testi {conditionsModel.Date:dd.MM.yyyy} {conditionsModel.Time:HH:mm}",
+                EventDate = eventDateTime,
+                Location = conditionsModel.Location ?? "",
+                AirTemperature = conditionsModel.AirTempC,
+                Humidity = conditionsModel.SnowMoisturePct,
+                SnowCondition = GetSnowCompositionName(conditionsModel.SnowComposition),
+                Notes = conditionsModel.Notes
+            };
+
+            DbContext.TestEvents.Add(testEvent);
+            await DbContext.SaveChangesAsync();
+            
+            testEventId = testEvent.Id;
+            currentStep = 2;
+            await LoadAvailablePairs();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Virhe tallennuksessa: {ex.Message}";
+        }
+    }
+
+    private async Task LoadAvailablePairs()
+    {
+        isLoadingPairs = true;
+        availablePairs = await DbContext.SkiPairs
+            .Where(sp => sp.IsActive)
+            .OrderBy(sp => sp.PairNumber)
+            .ToListAsync();
+        isLoadingPairs = false;
+    }
+
+    private void TogglePair(int pairId, bool selected)
+    {
+        if (selected)
+        {
+            if (selectedPairIds.Count < 10)
+            {
+                selectedPairIds.Add(pairId);
+            }
+        }
+        else
+        {
+            selectedPairIds.Remove(pairId);
+        }
+        
+        allPairsSelected = selectedPairIds.Count == availablePairs.Count && availablePairs.Count > 0;
+        pairSelectionModel.ValidationError = null;
+    }
+
+    private void ToggleAllPairs(bool selected)
+    {
+        selectedPairIds.Clear();
+        if (selected)
+        {
+            var pairsToSelect = availablePairs.Take(10).Select(p => p.Id);
+            foreach (var id in pairsToSelect)
+            {
+                selectedPairIds.Add(id);
+            }
+        }
+        allPairsSelected = selected && selectedPairIds.Count == availablePairs.Count;
+    }
+
+    private async Task SavePairSelection()
+    {
+        if (selectedPairIds.Count == 0)
+        {
+            pairSelectionModel.ValidationError = "Valitse vähintään 1 suksipari.";
+            return;
+        }
+        
+        if (selectedPairIds.Count > 10)
+        {
+            pairSelectionModel.ValidationError = "Voit valita enintään 10 suksiparia.";
+            return;
+        }
+
+        try
+        {
+            // Create TestEventPair entries
+            foreach (var pairId in selectedPairIds)
+            {
+                var testEventPair = new TestEventPair
+                {
+                    TestEventId = testEventId,
+                    SkiPairId = pairId
+                };
+                DbContext.TestEventPairs.Add(testEventPair);
+            }
+            
+            await DbContext.SaveChangesAsync();
+            
+            currentStep = 3;
+            await LoadWaxingData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Virhe tallennuksessa: {ex.Message}";
+        }
+    }
+
+    private async Task LoadWaxingData()
+    {
+        isLoadingWaxes = true;
+        
+        waxCategories = await DbContext.WaxCategories
+            .OrderBy(c => c.DisplayOrder)
+            .ToListAsync();
+            
+        availableWaxes = await DbContext.Waxes
+            .Where(w => w.IsActive)
+            .OrderBy(w => w.WaxCategoryId)
+            .ThenBy(w => w.Name)
+            .ToListAsync();
+        
+        // Initialize empty selections for each pair
+        foreach (var pairId in selectedPairIds)
+        {
+            if (!pairWaxSelections.ContainsKey(pairId))
+            {
+                pairWaxSelections[pairId] = new List<int>();
+            }
+            if (!pairWaxInstructions.ContainsKey(pairId))
+            {
+                pairWaxInstructions[pairId] = "";
+            }
+        }
+        
+        isLoadingWaxes = false;
+    }
+
+    private bool IsWaxSelectedForPair(int pairId, int waxId)
+    {
+        return pairWaxSelections.ContainsKey(pairId) && pairWaxSelections[pairId].Contains(waxId);
+    }
+
+    private void ToggleWaxForPair(int pairId, int waxId, bool selected)
+    {
+        if (!pairWaxSelections.ContainsKey(pairId))
+        {
+            pairWaxSelections[pairId] = new List<int>();
+        }
+
+        if (selected)
+        {
+            if (!pairWaxSelections[pairId].Contains(waxId))
+            {
+                pairWaxSelections[pairId].Add(waxId);
+            }
+        }
+        else
+        {
+            pairWaxSelections[pairId].Remove(waxId);
+        }
+    }
+
+    private string GetInstructionsForPair(int pairId)
+    {
+        return pairWaxInstructions.ContainsKey(pairId) ? pairWaxInstructions[pairId] : "";
+    }
+
+    private void SetInstructionsForPair(int pairId, string? instructions)
+    {
+        pairWaxInstructions[pairId] = instructions ?? "";
+    }
+
+    private async Task SaveWaxing()
+    {
+        try
+        {
+            // Get all TestEventPair records
+            var testEventPairs = await DbContext.TestEventPairs
+                .Where(tep => tep.TestEventId == testEventId)
+                .ToListAsync();
+
+            // Save wax selections
+            foreach (var pairId in selectedPairIds)
+            {
+                var testEventPair = testEventPairs.FirstOrDefault(tep => tep.SkiPairId == pairId);
+                if (testEventPair != null)
+                {
+                    // Add selected waxes
+                    if (pairWaxSelections.ContainsKey(pairId))
+                    {
+                        int layerOrder = 1;
+                        foreach (var waxId in pairWaxSelections[pairId])
+                        {
+                            var testEventPairWax = new TestEventPairWax
+                            {
+                                TestEventPairId = testEventPair.Id,
+                                WaxId = waxId,
+                                LayerOrder = layerOrder++
+                            };
+                            DbContext.TestEventPairWaxes.Add(testEventPairWax);
+                        }
+                    }
+                    
+                    // Save instructions as notes
+                    if (pairWaxInstructions.ContainsKey(pairId) && !string.IsNullOrEmpty(pairWaxInstructions[pairId]))
+                    {
+                        testEventPair.Notes = pairWaxInstructions[pairId];
+                    }
+                }
+            }
+
+            await DbContext.SaveChangesAsync();
+            
+            currentStep = 4;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Virhe tallennuksessa: {ex.Message}";
+        }
+    }
+
+    private async Task GenerateBracket()
+    {
+        isGeneratingBracket = true;
+        errorMessage = null;
+
+        try
+        {
+            // Get TestEventPairs
+            var testEventPairs = await DbContext.TestEventPairs
+                .Where(tep => tep.TestEventId == testEventId)
+                .OrderBy(tep => tep.SkiPairId)
+                .ToListAsync();
+
+            if (testEventPairs.Count < 2)
+            {
+                errorMessage = "Tarvitaan vähintään 2 suksiparia kaavion luomiseen.";
+                isGeneratingBracket = false;
+                return;
+            }
+
+            // Luo vain ensimmäisen kierroksen ottelut
+            var allMatches = new List<Match>();
+            int totalPairs = testEventPairs.Count;
+            var pairIds = testEventPairs.Select(tep => tep.SkiPairId).ToList();
+
+            // Kierros 1: Luo ottelut pareittain
+            int matchesInRound = totalPairs / 2;
+            for (int matchNum = 1; matchNum <= matchesInRound; matchNum++)
+            {
+                int idx = (matchNum - 1) * 2;
+                var match = new Match
+                {
+                    TestEventId = testEventId,
+                    Round = 1,
+                    MatchNumber = matchNum,
+                    Status = MatchStatus.Pending,
+                    SkiPair1Id = pairIds[idx],
+                    SkiPair2Id = pairIds[idx + 1]
+                };
+                allMatches.Add(match);
+            }
+
+            // Jos pariton määrä pareja, viimeinen pari saa bye-ottelun (ei vastustajaa)
+            if (totalPairs % 2 == 1)
+            {
+                var byeMatch = new Match
+                {
+                    TestEventId = testEventId,
+                    Round = 1,
+                    MatchNumber = matchesInRound + 1,
+                    Status = MatchStatus.Pending,
+                    SkiPair1Id = pairIds[totalPairs - 1],
+                    SkiPair2Id = null // Ei vastustajaa = automaattinen voitto
+                };
+                allMatches.Add(byeMatch);
+            }
+
+            DbContext.Matches.AddRange(allMatches);
+            await DbContext.SaveChangesAsync();
+
+            // Navigate to Run page
+            Navigation.NavigateTo($"/tests/{testEventId}/run");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Virhe kaaviota luodessa: {ex.Message}";
+            isGeneratingBracket = false;
+        }
+    }
+
+    private void GoToPreviousStep()
+    {
+        if (currentStep > 1)
+        {
+            currentStep--;
+        }
+    }
+
+    private string GetSnowCompositionName(SnowComposition composition)
+    {
+        return composition switch
+        {
+            SnowComposition.Uusi => "Uusi lumi",
+            SnowComposition.Vanha => "Vanha lumi",
+            SnowComposition.Hieno => "Hieno lumi",
+            SnowComposition.Karkea => "Karkea lumi",
+            SnowComposition.Muu => "Muu",
+            _ => composition.ToString()
+        };
+    }
+
+    private string FormatTempRange(decimal? min, decimal? max)
+    {
+        if (min.HasValue && max.HasValue)
+            return $"{min:F1}°C - {max:F1}°C";
+        if (min.HasValue)
+            return $"{min:F1}°C+";
+        if (max.HasValue)
+            return $"< {max:F1}°C";
+        return "";
+    }
+
+    // Form Models
+    private class ConditionsFormModel
+    {
+        [Required(ErrorMessage = "Päivämäärä on pakollinen")]
+        public DateTime Date { get; set; } = DateTime.Today;
+
+        [Required(ErrorMessage = "Kellonaika on pakollinen")]
+        public DateTime Time { get; set; } = DateTime.Today.AddHours(12);
+
+        [Required(ErrorMessage = "Ilman lämpötila on pakollinen")]
+        [Range(-50, 50, ErrorMessage = "Lämpötilan tulee olla välillä -50 ja +50 °C")]
+        public decimal AirTempC { get; set; }
+
+        [Required(ErrorMessage = "Lumen kosteus on pakollinen")]
+        [Range(0, 100, ErrorMessage = "Kosteuden tulee olla välillä 0-100 %")]
+        public decimal SnowMoisturePct { get; set; }
+
+        [Required(ErrorMessage = "Lumen koostumus on pakollinen")]
+        public SnowComposition SnowComposition { get; set; }
+
+        public string? Location { get; set; }
+        
+        public string? Notes { get; set; }
+    }
+
+    private class PairSelectionModel
+    {
+        public string? ValidationError { get; set; }
+    }
+
+    private class WaxingFormModel
+    {
+        // This is just a placeholder for the EditForm
+    }
+}

@@ -1,0 +1,12 @@
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/bin/Debug/net8.0/SkiServiceLogbook.Domain.deps.json
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/bin/Debug/net8.0/SkiServiceLogbook.Domain.dll
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/bin/Debug/net8.0/SkiServiceLogbook.Domain.pdb
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/obj/Debug/net8.0/SkiServiceLogbook.Domain.GeneratedMSBuildEditorConfig.editorconfig
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/obj/Debug/net8.0/SkiServiceLogbook.Domain.AssemblyInfoInputs.cache
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/obj/Debug/net8.0/SkiServiceLogbook.Domain.AssemblyInfo.cs
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/obj/Debug/net8.0/SkiServiceLogbook.Domain.csproj.CoreCompileInputs.cache
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/obj/Debug/net8.0/SkiServiceLogbook.Domain.sourcelink.json
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/obj/Debug/net8.0/SkiServiceLogbook.Domain.dll
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/obj/Debug/net8.0/refint/SkiServiceLogbook.Domain.dll
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/obj/Debug/net8.0/SkiServiceLogbook.Domain.pdb
+/workspaces/Ski-Service/SkiServiceLogbook.Domain/obj/Debug/net8.0/ref/SkiServiceLogbook.Domain.dll
